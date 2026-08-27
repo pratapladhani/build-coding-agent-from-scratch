@@ -1,4 +1,8 @@
 import { OpenRouter } from '@openrouter/sdk';
+import type { ChatAssistantMessage, ChatMessages } from '@openrouter/sdk/models';
+
+import { runTool } from './tools/index.js';
+import { readFileTool } from './tools/read-file.js';
 
 const apiKey = process.env.OPENROUTER_API_KEY;
 
@@ -9,7 +13,11 @@ if (!apiKey) {
 
 const model = process.env.OPENROUTER_MODEL ?? 'minimax/minimax-m3:free';
 const openRouter = new OpenRouter({ apiKey });
-const messages: { role: 'user' | 'assistant'; content: string }[] = [];
+const messages: ChatMessages[] = [];
+
+function textOf(message: ChatAssistantMessage): string {
+  return typeof message.content === 'string' ? message.content : '';
+}
 
 export async function complete(userInput: string): Promise<string> {
   messages.push({ role: 'user', content: userInput });
@@ -19,13 +27,37 @@ export async function complete(userInput: string): Promise<string> {
       model,
       stream: false,
       messages,
+      tools: [readFileTool],
     },
   });
 
-  const content = 'choices' in result ? result.choices[0]?.message.content : null;
+  const reply = ('choices' in result ? result.choices[0]?.message : undefined) as ChatAssistantMessage | undefined;
+  if (!reply) return '';
 
-  const reply = typeof content === 'string' ? content : '';
-  messages.push({ role: 'assistant', content: reply });
+  messages.push(reply);
 
-  return reply;
+  const call = reply.toolCalls?.[0];
+  if (!call) {
+    return textOf(reply);
+  }
+
+  messages.push({
+    role: 'tool',
+    toolCallId: call.id,
+    content: runTool(call.function.name, call.function.arguments),
+  });
+
+  const followUp = await openRouter.chat.send({
+    chatRequest: {
+      model,
+      stream: false,
+      messages,
+      tools: [readFileTool],
+    },
+  });
+  const finalReply = ('choices' in followUp ? followUp.choices[0]?.message : undefined) as ChatAssistantMessage | undefined;
+  if (!finalReply) return '';
+
+  messages.push(finalReply);
+  return textOf(finalReply);
 }
