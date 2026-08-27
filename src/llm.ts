@@ -9,17 +9,23 @@ if (!apiKey) {
 
 const model = process.env.OPENROUTER_MODEL ?? 'minimax/minimax-m3:free';
 const openRouter = new OpenRouter({ apiKey });
+const messages: { role: 'user' | 'assistant'; content: string }[] = [];
 
 export async function complete(userInput: string): Promise<string> {
+  messages.push({ role: 'user', content: userInput });
+
   const result = await openRouter.chat.send({
     chatRequest: {
       model,
       stream: false,
-      messages: [{ role: 'user', content: userInput }],
+      messages,
     },
   });
 
   const content = 'choices' in result ? result.choices[0]?.message.content : null;
 
-  return typeof content === 'string' ? content : '';
+  const reply = typeof content === 'string' ? content : '';
+  messages.push({ role: 'assistant', content: reply });
+
+  return reply;
 }
