@@ -1,6 +1,7 @@
 import { OpenRouter } from '@openrouter/sdk';
 import type { ChatAssistantMessage, ChatMessages, ChatToolCall } from '@openrouter/sdk/models';
 
+import * as prompt from './prompt.js';
 import * as tools from './tools/index.js';
 
 export type ToolCall = {
@@ -23,7 +24,7 @@ if (!apiKey) {
 
 const model = process.env.OPENROUTER_MODEL ?? 'minimax/minimax-m3:free';
 const openRouter = new OpenRouter({ apiKey });
-const messages: ChatMessages[] = [];
+const messages: ChatMessages[] = [{ role: 'system', content: prompt.coding }];
 
 function messagesFor(turn: string | readonly tools.ToolResult[]): ChatMessages[] {
   if (typeof turn === 'string') return [{ role: 'user', content: turn }];
