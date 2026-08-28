@@ -1,8 +1,18 @@
 import { OpenRouter } from '@openrouter/sdk';
 import type { ChatAssistantMessage, ChatMessages } from '@openrouter/sdk/models';
 
-import { runTool } from './tools/index.js';
 import { readFileTool } from './tools/read-file.js';
+
+export type ToolCall = {
+  id: string;
+  name: string;
+  arguments: string;
+};
+
+export type Response = {
+  text: string;
+  toolCall?: ToolCall;
+};
 
 const apiKey = process.env.OPENROUTER_API_KEY;
 
@@ -19,7 +29,7 @@ function textOf(message: ChatAssistantMessage): string {
   return typeof message.content === 'string' ? message.content : '';
 }
 
-export async function complete(userInput: string): Promise<string> {
+export async function complete(userInput: string): Promise<Response> {
   messages.push({ role: 'user', content: userInput });
 
   const result = await openRouter.chat.send({
@@ -38,26 +48,15 @@ export async function complete(userInput: string): Promise<string> {
 
   const call = reply.toolCalls?.[0];
   if (!call) {
-    return textOf(reply);
+    return { text: textOf(reply) };
   }
 
-  messages.push({
-    role: 'tool',
-    toolCallId: call.id,
-    content: runTool(call.function.name, call.function.arguments),
-  });
-
-  const followUp = await openRouter.chat.send({
-    chatRequest: {
-      model,
-      stream: false,
-      messages,
-      tools: [readFileTool],
+  return {
+    text: textOf(reply),
+    toolCall: {
+      id: call.id,
+      name: call.function.name,
+      arguments: call.function.arguments,
     },
-  });
-  const finalReply = ('choices' in followUp ? followUp.choices[0]?.message : undefined) as ChatAssistantMessage | undefined;
-  if (!finalReply) return '';
-
-  messages.push(finalReply);
-  return textOf(finalReply);
+  };
 }
