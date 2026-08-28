@@ -1,17 +1,17 @@
 import { OpenRouter } from '@openrouter/sdk';
-import type { ChatAssistantMessage, ChatMessages } from '@openrouter/sdk/models';
+import type { ChatAssistantMessage, ChatMessages, ChatToolCall } from '@openrouter/sdk/models';
 
-import { readFileTool } from './tools/read-file.js';
+import * as tools from './tools/index.js';
 
 export type ToolCall = {
-  id: string;
-  name: string;
-  arguments: string;
+  readonly id: string;
+  readonly name: string;
+  readonly arguments: string;
 };
 
 export type Response = {
-  text: string;
-  toolCall?: ToolCall;
+  readonly text: string;
+  readonly toolCalls: readonly tools.ToolCall[];
 };
 
 const apiKey = process.env.OPENROUTER_API_KEY;
@@ -25,38 +25,44 @@ const model = process.env.OPENROUTER_MODEL ?? 'minimax/minimax-m3:free';
 const openRouter = new OpenRouter({ apiKey });
 const messages: ChatMessages[] = [];
 
-function textOf(message: ChatAssistantMessage): string {
-  return typeof message.content === 'string' ? message.content : '';
+function messagesFor(turn: string | readonly tools.ToolResult[]): ChatMessages[] {
+  if (typeof turn === 'string') return [{ role: 'user', content: turn }];
+
+  return turn.map((result) => ({
+    role: 'tool',
+    toolCallId: result.id,
+    content: result.output,
+  }));
 }
 
-export async function complete(userInput: string): Promise<Response> {
-  messages.push({ role: 'user', content: userInput });
+function textOf(content: ChatAssistantMessage['content']): string {
+  return typeof content === 'string' ? content : '';
+}
+
+function toolCallsFrom(calls: ChatToolCall[] | undefined): tools.ToolCall[] {
+  return (calls ?? []).map((call) => ({
+    id: call.id,
+    name: call.function.name,
+    arguments: call.function.arguments,
+  }));
+}
+
+export async function complete(turn: string | readonly tools.ToolResult[]): Promise<Response> {
+  messages.push(...messagesFor(turn));
 
   const result = await openRouter.chat.send({
     chatRequest: {
       model,
       stream: false,
       messages,
-      tools: [readFileTool],
+      tools: tools.schemas,
     },
   });
 
   const reply = ('choices' in result ? result.choices[0]?.message : undefined) as ChatAssistantMessage | undefined;
-  if (!reply) return '';
+  if (!reply) return { text: '', toolCalls: [] };
 
   messages.push(reply);
 
-  const call = reply.toolCalls?.[0];
-  if (!call) {
-    return { text: textOf(reply) };
-  }
-
-  return {
-    text: textOf(reply),
-    toolCall: {
-      id: call.id,
-      name: call.function.name,
-      arguments: call.function.arguments,
-    },
-  };
+  return { text: textOf(reply.content), toolCalls: toolCallsFrom(reply.toolCalls) };
 }

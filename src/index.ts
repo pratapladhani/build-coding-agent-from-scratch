@@ -6,11 +6,8 @@ while (true) {
 	const userInput = await cli.ask();
 	let response = await llm.complete(userInput);
 
-	if (response.toolCall) {
-		cli.using(response.toolCall.name, response.toolCall.arguments);
-		response = await llm.complete(
-			tools.runTool(response.toolCall.name, response.toolCall.arguments),
-		);
+	if (response.toolCalls.length > 0) {
+		response = await llm.complete(await tools.run(response.toolCalls));
 	}
 
 	cli.reply(response.text);
