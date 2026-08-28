@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 
 import * as cli from '../cli.js';
+import * as bash from './bash.js';
 import * as editFile from './edit-file.js';
 import { readFileTool } from './read-file.js';
 
@@ -21,11 +22,12 @@ export type ToolResult = {
 
 type Runner = (argumentsJson: string) => Promise<string>;
 
-export const schemas = [readFileTool, editFile.schema];
+export const schemas = [readFileTool, editFile.schema, bash.schema];
 
 const runners: Record<string, Runner> = {
   read_file: async (argumentsJson) => runTool('read_file', argumentsJson),
   edit_file: editFile.run,
+  bash: bash.run,
 };
 
 export function runTool(name: string, argumentsJson: string): string {
@@ -46,9 +48,9 @@ async function runOne(call: ToolCall): Promise<ToolResult> {
   cli.using(call.name, call.arguments);
 
   const runner = runners[call.name];
-  const output = runner
-    ? await runner(call.arguments)
-    : `There is no tool called ${call.name}.`;
+  if (!runner) return { id: call.id, output: `There is no tool called ${call.name}.` };
+
+  const output = await runner(call.arguments).catch((reason: unknown) => String(reason));
 
   return { id: call.id, output };
 }
