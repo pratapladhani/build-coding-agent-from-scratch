@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 
 import * as cli from '../cli.js';
+import * as editFile from './edit-file.js';
 import { readFileTool } from './read-file.js';
 
 type ToolArguments = {
@@ -18,7 +19,14 @@ export type ToolResult = {
   output: string;
 };
 
-export const schemas = [readFileTool];
+type Runner = (argumentsJson: string) => Promise<string>;
+
+export const schemas = [readFileTool, editFile.schema];
+
+const runners: Record<string, Runner> = {
+  read_file: async (argumentsJson) => runTool('read_file', argumentsJson),
+  edit_file: editFile.run,
+};
 
 export function runTool(name: string, argumentsJson: string): string {
   const argumentsObject = JSON.parse(argumentsJson) as ToolArguments;
@@ -37,5 +45,10 @@ export function run(toolCalls: readonly ToolCall[]): Promise<ToolResult[]> {
 async function runOne(call: ToolCall): Promise<ToolResult> {
   cli.using(call.name, call.arguments);
 
-  return { id: call.id, output: runTool(call.name, call.arguments) };
+  const runner = runners[call.name];
+  const output = runner
+    ? await runner(call.arguments)
+    : `There is no tool called ${call.name}.`;
+
+  return { id: call.id, output };
 }
